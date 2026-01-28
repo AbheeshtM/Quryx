@@ -110,46 +110,43 @@ if mode == "PDF / Notes Mode":
         if st.button("Generate Questions from Notes"):
             if qtype == "MCQ":
                 prompt = f"""
-Generate 10 MCQs strictly from the notes below.
+You are a professional exam paper setter for {exam}.
 
-Style: {exam if exam else "General"}
+Topic: {topic}
 
-Notes:
-{notes}
+Use the data below ONLY to understand:
+- Difficulty level of {exam}
+- Style of real questions
 
-Rules:
-- Use only given content
-- Mix easy, medium, hard
+ABSOLUTE RULES:
+- DO NOT ask about exam pattern, papers, years, seats, marks, or statistics.
+- DO NOT mention the exam itself in any question.
+- DO NOT generate meta-questions like “How many questions…”, “Which paper…”.
+- Every question must be a REAL subject question from the topic "{topic}".
+- Questions must look like those found in actual {exam} papers.
+- Focus on concepts, problem-solving, and application.
 
-Format:
+Generate 10 MCQs:
+- 3 Easy
+- 4 Medium
+- 3 Hard
+- Conceptual / numerical / application-based
+- Strictly from the topic "{topic}"
 
-Q1: ...
+Reference (for style only):
+{web_info}
+
+Output FORMAT (follow exactly):
+
+Q1: <real subject question>
 A) ...
 B) ...
 C) ...
 D) ...
 Answer: B
-Difficulty: Medium
+Difficulty: Easy
 """
-            else:
-                prompt = f"""
-Generate 6 descriptive questions strictly from the notes below.
 
-Style: {exam if exam else "General"}
-
-Notes:
-{notes}
-
-Rules:
-- Use only given content
-- Ask conceptual, long-answer questions
-
-Format:
-
-Q1. (10 marks) Question text
-Q2. (15 marks) Question text
-...
-"""
 
             st.session_state.paper = generate(prompt)
 
