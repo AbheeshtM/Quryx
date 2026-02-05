@@ -3,6 +3,7 @@ from groq import Groq
 
 from core.search import search_exam_info
 from core.pdf_reader import read_pdf
+from core.question_gen import build_mcq_prompt
 
 st.set_page_config(page_title="AI Exam Engine", layout="centered")
 st.title("🎓 AI Exam Engine")
@@ -14,11 +15,6 @@ mode = st.radio(
     ["Exam Topic Mode", "PDF / Notes Mode"]
 )
 
-qtype = st.radio(
-    "Question Format",
-    ["MCQ", "Descriptive / Long Answer"]
-)
-
 def generate(prompt):
     res = client.chat.completions.create(
         model="llama-3.1-8b-instant",
@@ -28,131 +24,115 @@ def generate(prompt):
     return res.choices[0].message.content
 
 
-# -------- EXAM TOPIC MODE --------
+# ================= EXAM TOPIC MODE =================
 if mode == "Exam Topic Mode":
     exam = st.text_input("Enter Exam Name (e.g. JEE Main, UPSC, GRE)")
-    topic = st.text_input("Enter Topic (e.g. Electrostatics, Polity, Probability)")
+    topic = st.text_input("Enter Topic (e.g. Electrostatics, Polity)")
 
     if exam and topic:
-        with st.spinner("Searching real exam data..."):
-            web_info = search_exam_info(f"{exam} {topic} most asked questions")
-
-        st.subheader("Reference Data")
-        st.write(web_info[:1200])
+        with st.spinner("Fetching exam style..."):
+            web_info = search_exam_info(f"{exam} {topic} questions")
 
         if st.button("Generate Questions"):
-            if qtype == "MCQ":
-                prompt = f"""
-You are an expert question setter for {exam}.
+            prompt = build_mcq_prompt(exam, topic, web_info)
+            st.session_state.paper = generate(prompt)
+            st.session_state.copied_question = ""
+
+    if "paper" in st.session_state:
+        st.subheader("📄 Generated Questions")
+
+        raw = st.session_state.paper
+        questions = raw.split("\n\nQ")
+        questions = ["Q" + q.strip() for q in questions if q.strip()]
+
+        for i, q in enumerate(questions):
+            st.markdown(f"### Question {i+1}")
+            st.code(q)
+
+            st.button(
+                "📋 Copy Question",
+                key=f"copy_exam_{i}",
+                on_click=lambda q=q: st.session_state.update(
+                    {"copied_question": q}
+                )
+            )
+
+
+# ================= PDF / NOTES MODE =================
+if mode == "PDF / Notes Mode":
+    exam = st.text_input("Optional Exam Style (e.g. JEE, UPSC, General)")
+    topic = st.text_input("Topic from Notes")
+    pdf = st.file_uploader("Upload Text-based PDF", type=["pdf"])
+
+    if pdf and topic:
+        notes = read_pdf(pdf)
+        st.write(notes[:800])
+
+        if st.button("Generate Questions from Notes"):
+            prompt = f"""
+You are an expert exam question setter.
 
 Topic: {topic}
+Exam style: {exam}
 
-Using the information below, generate 10 MCQs that are:
-- True to the nature of {exam}
-- Based on what is commonly asked
-- Difficulty split: Easy, Medium, Hard
-- Real exam-like
+STRICT RULES:
+- DO NOT provide correct answers
+- DO NOT provide explanations
+- Some questions MAY have multiple correct options
+- Use ONLY the content below
 
-Data:
-{web_info}
+CONTENT:
+{notes}
 
-Format:
+Generate exactly 10 MCQs.
+
+FORMAT:
 
 Q1: ...
 A) ...
 B) ...
 C) ...
 D) ...
-Answer: B
-Difficulty: Easy
 """
-            else:
-                prompt = f"""
-You are an expert question setter for {exam}.
-
-Topic: {topic}
-
-Using the information below, generate 6 long-answer questions that are:
-- Commonly asked in {exam}
-- Concept-heavy
-- Real exam style
-- Mix of medium and hard
-
-Data:
-{web_info}
-
-Format:
-
-Q1. (10 marks) Question text
-Q2. (15 marks) Question text
-...
-"""
-
             st.session_state.paper = generate(prompt)
+            st.session_state.copied_question = ""
 
-        if "paper" in st.session_state:
-            st.subheader("Generated Paper")
-            st.write(st.session_state.paper)
+    if "paper" in st.session_state:
+        st.subheader("📄 Generated Questions")
 
-            if st.button("Generate Another Set"):
-                del st.session_state["paper"]
+        raw = st.session_state.paper
+        questions = raw.split("\n\nQ")
+        questions = ["Q" + q.strip() for q in questions if q.strip()]
 
+        for i, q in enumerate(questions):
+            st.markdown(f"### Question {i+1}")
+            st.code(q)
 
-# -------- PDF / NOTES MODE --------
-if mode == "PDF / Notes Mode":
-    exam = st.text_input("Optional Exam Style (e.g. JEE, UPSC, General)")
-    pdf = st.file_uploader("Upload Text-based PDF", type=["pdf"])
-
-    if pdf:
-        notes = read_pdf(pdf)
-        st.write(notes[:1000])
-
-        if st.button("Generate Questions from Notes"):
-            if qtype == "MCQ":
-                prompt = f"""
-You are a professional exam paper setter for {exam}.
-
-Topic: {topic}
-
-Use the data below ONLY to understand:
-- Difficulty level of {exam}
-- Style of real questions
-
-ABSOLUTE RULES:
-- DO NOT ask about exam pattern, papers, years, seats, marks, or statistics.
-- DO NOT mention the exam itself in any question.
-- DO NOT generate meta-questions like “How many questions…”, “Which paper…”.
-- Every question must be a REAL subject question from the topic "{topic}".
-- Questions must look like those found in actual {exam} papers.
-- Focus on concepts, problem-solving, and application.
-
-Generate 10 MCQs:
-- 3 Easy
-- 4 Medium
-- 3 Hard
-- Conceptual / numerical / application-based
-- Strictly from the topic "{topic}"
-
-Reference (for style only):
-{web_info}
-
-Output FORMAT (follow exactly):
-
-Q1: <real subject question>
-A) ...
-B) ...
-C) ...
-D) ...
-Answer: B
-Difficulty: Easy
-"""
+            st.button(
+                "📋 Copy Question",
+                key=f"copy_pdf_{i}",
+                on_click=lambda q=q: st.session_state.update(
+                    {"copied_question": q}
+                )
+            )
 
 
-            st.session_state.paper = generate(prompt)
+# ================= SOLVER / CHAT =================
+st.divider()
+st.subheader("🔍 Solve / Search Question")
 
-        if "paper" in st.session_state:
-            st.subheader("Generated Paper")
-            st.write(st.session_state.paper)
+query = st.text_area(
+    "Copied question will appear here",
+    value=st.session_state.get("copied_question", ""),
+    height=200
+)
 
-            if st.button("Generate Another Set"):
-                del st.session_state["paper"]
+if st.button("Ask AI to Solve"):
+    if query.strip():
+        with st.spinner("Solving..."):
+            solution = generate(
+                f"Solve this question step by step:\n\n{query}"
+            )
+            st.write(solution)
+    else:
+        st.warning("Please copy or paste a question first.")
